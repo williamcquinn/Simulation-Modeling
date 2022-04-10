@@ -1,0 +1,366 @@
+---
+title: "Ontario Case"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+```
+
+##### Report by Group 4
+
+We will begin this case by assuming some of the given quantities and costs. The industry-wide accident rate we will be assuming will be 1 in 5 million flights. We will then continue on to do a sensitivity analysis with a 25% safer rate of accidents.
+
+```{r crash_rates}
+industry <- 5000000
+crash_prob <- 1 / industry
+
+sens <- 1.25 * 5000000
+sens_prob <- 1 / sens
+```
+
+For the sake of our simulation, we will be doing 1 million trials, with the following information.
+
+```{r table519}
+name <- c('Boeing', 'Airbus M200', 'Airbus M300')
+number <- c(47, 15, 24)
+price <- c(56.4, 78.9, 88.5)
+freq <- c(6, 2.25, 2)
+
+mat_table <- matrix(c(name, number, price, freq), nrow = 3, ncol = 4)
+knitr::kable(mat_table, col.names = c('Aircraft', 'Number', 'Replacement Cost ($ million)', 'Flights per Day'))
+```
+
+``` {r sim_set}
+n <- 1000000
+
+b <- 47
+bc <- 56.4
+
+m200 <- 15
+m200c <- 78.9
+
+m300 <- 24
+m300c <- 88.5
+```
+
+
+The incidental damages industry-wide are between 1 and 5 million USD per year. To model this, we created a matrix to hold the values for the 5 years. Likewise, we created a matrix to hold the simulated values over a span of 5 years for the number of losses for each aircraft.   
+```{r matrix_creation}
+b_5 <- matrix(nrow = n, ncol = 5)
+m200_5 <- matrix(nrow = n, ncol = 5)
+m300_5 <- matrix(nrow = n, ncol = 5)
+
+create <- function(n, freq, flights, crash_prob) {
+  mat <- matrix(nrow = n, ncol = 5)
+  for(i in 1:5) {
+    losses <- rbinom(n, round(342 * flights * freq), crash_prob)  
+    for (j in 1:n) {
+      mat[j, i] <- losses[j]
+    }
+  }
+  return(mat)
+}
+```
+
+
+```{r incidental_damages}
+inc_dam <- matrix(nrow = n, ncol = 5)
+for(inc in 1:5) {
+  minc <- runif(n, 1, 5)
+  for (inc2 in 1:n) {
+    inc_dam[inc2, inc] <- minc[inc2]
+  }
+}
+```
+
+##### Industry-Wide Accident Rate
+
+Using the industry-wide accident rate, we calculate under each insurance policy, our simulated costs over the first year for 1,000,000 times. Since Mary wants to minimize the chance of losses exceeding 37 million USD in the first year, we calculate the probability of our costs going over 37 million USD. With respect to this percentage, we should be choosing HIC, RCNC1/CTC, then RCNC2. Looking at the actual average payments for the first year, however, we see that these values are inconsistent with the former, and instead we should be choosing RCNC2, HIC, CTC, then RCNC1. Nonetheless, when variability is considered, we observe that RCNC2 and HIC have much higher standard deviations than RCNC1 and CTC. Seen at this angle, in order to prevent the firm from paying a cost having a huge difference to the expected payments, the safer choices would be to choose RCNC1 or CTC. In terms of the 5-year coverage, finally we would choose CTC to obtain insurance coverage at the lowest cost.  
+
+``` {r prob_industry}
+# 1 in 5M chance of a crash
+b_5 <- create(n, 6, 47, crash_prob)
+m200_5 <- create(n, 2.25, 15, crash_prob)
+m300_5 <- create (n, 2, 24, crash_prob)
+
+rcnc1_b_fixed <- (0.45 / 100) * b * bc
+rc1_200_fixed <- (0.45 / 100) * m200 * m200c
+rc1_300_fixed <- (0.45 / 100) * m300 * m300c
+rc1_fixed <- rcnc1_b_fixed + rc1_200_fixed + rc1_300_fixed
+
+rcnc1_b_damages <- (0.1) * b_5[1:n, 1] * bc
+rc1_200_damages <- (0.1) * m200_5[1:n, 1] * m200c
+rc1_300_damages <- (0.1) * m300_5[1:n, 1] * m300c
+rc1_dam <- rcnc1_b_damages + rc1_200_damages + rc1_300_damages + (0.1 * inc_dam[1:n, 1])
+
+rcnc1_b_rebate <- 0.2 * ((5 * rcnc1_b_fixed) - (sum(b_5) * bc * 0.1))
+rc1_200_rebate <- 0.2 * ((5 * rc1_200_fixed) - (sum(m200_5) * m200c * 0.1))
+rc1_300_rebate <- 0.2 * ((5 * rc1_300_fixed) - (sum(m300_5) * m300c * 0.1))
+rc_reb <- rcnc1_b_rebate + rc1_200_rebate + rc1_300_rebate
+
+rcnc1 <- rc1_fixed + rc1_dam
+rcnc1_5 <- (5 * rc1_fixed) - max(rc_reb, 0) + (rowSums(inc_dam) + (rowSums(b_5) * bc) + (rowSums(m200_5) * m200c) + (rowSums(m300_5) * m300c)) * 0.1 
+
+#RCNC2
+#0.10% fleet + min(90% total losses, 1% insured fleet value)
+
+rcnc2_b_fixed <- (0.1 / 100) * b * bc
+rc2_200_fixed <- (0.1 / 100) * m200 * m200c
+rc2_300_fixed <- (0.1 / 100) * m300 * m300c
+rc2_fixed <- rcnc2_b_fixed + rc2_200_fixed + rc2_300_fixed
+
+#losses
+rc2_dam <- (0.9) * ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + 
+                      (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+
+rc2_dam_5 <- (0.9) * ((rowSums(b_5) * bc) + (rowSums(m200_5)* m200c) + 
+                        (rowSums(m300_5)* m300c) + rowSums(inc_dam))
+  
+#insured fleet value
+rcnc2_b_fleet <- (0.01) * b * bc
+rc2_200_fleet <- (0.01) * m200 * m200c
+rc2_300_fleet <- (0.01) * m300 * m300c
+rc2_fleet <- rcnc2_b_fleet + rc2_200_fleet + rc2_300_fleet
+
+rcnc2 <- rc2_fixed + pmin(rc2_dam, rc2_fleet)
+rcnc2_5 <- (5 * rc2_fixed) + pmin(rc2_dam_5, (5 * rc2_fleet))
+
+#CTC
+#$13mil annually + 10% losses up to 80mil + anything over 80mil
+ctc_fixed <- 13
+
+ctc_damages_1 <- ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+ctc_dam_1 <- ifelse(ctc_damages_1 > 80, ((0.1 * ctc_damages_1) + (ctc_damages_1 - 80)),((0.1) * ctc_damages_1))
+
+ctc_dam <- replicate(n, 0)
+for(col in 1:5) {
+  ctc_damages <- ((b_5[1:n, col] * bc) + (m200_5[1:n, col] * m200c) + 
+                    (m300_5[1:n, col] * m300c) + inc_dam[1:n, col])
+  ctc_dams <- ifelse(ctc_damages > 80, ((0.1 * ctc_damages) + (ctc_damages - 80)), ((0.1) * ctc_damages))
+  ctc_dam <- ctc_dam + ctc_dams
+}
+#ctc_dam
+
+ctc <- ctc_fixed + ctc_dam_1
+
+ctc_5 <- ctc_dam + (5 * ctc_fixed)
+
+#HIC
+#0.165% fleet + losses upto $24 mil + 3.5% cumulative profits rebate @ end of 5yrs.
+hic_b_fixed <- (0.165 / 100) * b * bc
+hic_200_fixed <- (0.165 / 100) * m200 * m200c
+hic_300_fixed <- (0.165 / 100) * m300 * m300c
+hic_fixed <- hic_b_fixed + hic_200_fixed + hic_300_fixed
+
+hic_damages_1 <- ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+hic_dam_1 <- ifelse(hic_damages_1 > 24.0, 24.0, hic_damages_1)
+
+hic_dam <- replicate(n, 0)
+for(col_h in 1:5) {
+  hic_damages <- ((b_5[1:n, col_h] * bc) + (m200_5[1:n, col_h] * m200c) + (m300_5[1:n, col_h] * m300c) + inc_dam[1:n, col_h])
+  hic_dams <- ifelse(hic_damages > 24, 24, hic_damages)
+  hic_dam <- hic_dam + hic_dams
+}
+
+hic_reb <- 0.035 * ((5 * hic_fixed) - mean(hic_dam))
+
+hic <- hic_fixed + hic_dam_1
+hic_5 <- hic_dam - hic_reb + (5 * hic_fixed)
+
+#to create the table
+
+name <- c('Plan', 'Mean > 37 Million (%)', 'Year 1 (Millions)', 'Standard Deviation', 'Total (Millions)')
+plan <- c('RCNC1', 'RCNC2', 'CTC', 'HIC')
+mean <- c(round(mean(rcnc1 > 37) * 100, 4), round(mean(rcnc2 > 37) * 100, 4), round(mean(ctc > 37) * 100, 4), round(mean(hic > 37) * 100, 4))
+y1 <- c(round(mean(rcnc1), 3), round(mean(rcnc2), 3), round(mean(ctc), 3), round(mean(hic), 3))
+sd <- c(round(sd(rcnc1), 3), round(sd(rcnc2), 3), round(sd(ctc), 3), round(sd(hic), 3))
+total <- c(round(mean(rcnc1_5), 3), round(mean(rcnc2_5), 3), round(mean(ctc_5), 3), round(mean(hic_5), 3))
+
+ind_table <- matrix(c(plan, mean, y1, sd, total), nrow = 4, ncol = 5)
+knitr::kable(ind_table, col.names = name)
+
+min_breaks <- min(c(rcnc1, rcnc2, ctc, hic))
+max_breaks <- max(c(rcnc1, rcnc2, ctc, hic))
+ax <- pretty(min_breaks:max_breaks, n = 10)
+hgA <- hist(rcnc1, breaks = ax, plot = FALSE)
+hgB <- hist(rcnc2, breaks = ax, plot = FALSE)
+hgC <- hist(ctc, breaks = ax, plot = FALSE)
+hgD <- hist(hic, breaks = ax, plot = FALSE)
+
+c1 <- rgb(173,216,230,max = 255, alpha = 80, names = "lt.blue")
+c2 <- rgb(255,192,203, max = 255, alpha = 80, names = "lt.pink")
+c3 <- rgb(144,238,144, max = 255, alpha = 80, names = "lt.green")
+c4 <- rgb(255,255,153, max = 255, alpha = 80, names = "lt.pink")
+
+par(mfrow=c(2,2))
+plot(hgA, col = c1, main='1-Year RCNC 1', xlab='Cost')
+plot(hgB, col = c2, main='1-Year RCNC 2', xlab='Cost', horizontal=TRUE)
+plot(hgC, col = c3, main='1-Year CTC', xlab='Cost')
+plot(hgD, col = c4, main='1-Year HIC', xlab='Cost', horizontal=TRUE)
+
+min_breaks <- min(c(rcnc1_5, rcnc2_5, ctc_5, hic_5))
+max_breaks <- max(c(rcnc1_5, rcnc2_5, ctc_5, hic_5))
+ax <- pretty(min_breaks:max_breaks, n = 10)
+hgA <- hist(rcnc1_5, breaks = ax, plot = FALSE)
+hgB <- hist(rcnc2_5, breaks = ax, plot = FALSE)
+hgC <- hist(ctc_5, breaks = ax, plot = FALSE)
+hgD <- hist(hic_5, breaks = ax, plot = FALSE)
+
+par(mfrow=c(2,2))
+plot(hgA, col = c1, main='5-Year RCNC 1', xlab='Cost')
+plot(hgB, col = c2, main='5-Year RCNC 2', xlab='Cost', horizontal=TRUE)
+plot(hgC, col = c3, main='5-Year CTC', xlab='Cost')
+plot(hgD, col = c4, main='5-Year HIC', xlab='Cost', horizontal=TRUE)
+```
+
+*frequency refers to the number of times a particular cost occurs over the span of 1,000,000 trials*   
+
+Looking at the plots above, the frequency of each plan costing more than 41 million USD can be seen. While RCNC1, CTC and HIC do not have an occurrence above 50 million USD, RCNC2 has an occurrence over 50 million USD, which will cause the firm to go bankrupt after the 1st year. Looking at the 5 year cost, the firm will have less variability, therefore less risk, if the CTC insurance plan is purchased. While RCNC2 was intially discarded for the possiblity of bankruptcy and RCNC1 for the high price, CTC and HIC were possibililties. But looking at the graph for 5 years, HIC has much more variability, with a frquency of over 100 million USD as well. To avoid this uncertainty, CTC would be the best option.   
+
+##### 25% Safter Accident Rate
+
+Considering that the firm operates a newer fleet of aircraft than the industry as a whole, we use a new probability estimating the accident rate. Being 25% safer, we calculate under each insurance policy, our simulated costs over the first year for 1,000,000 times. Since Mary wants to minimize the chance of losses exceeding 37 million USD in the first year, we calculate the probability of our costs going over 37 million USD. With respect to this percentage, we should be choosing HIC, RCNC1/CTC, then RCNC2. Looking at the actual average payments for the first year, however, we see that these values are inconsistent with the former, and instead we should be choosing RCNC2, HIC, CTC, then RCNC1. Nonetheless, when variability is considered, we observe that RCNC2 and HIC have much higher standard deviations than RCNC1 and CTC. Seen at this angle, in order to prevent the firm from paying a cost having a huge difference to the expected payments, the safer choices would be to choose RCNC1 or CTC. In terms of the 5-year coverage, finally we would choose CTC to obtain insurance coverage at the lowest cost.  
+
+```{r prob_safer}
+# 25% safer crash rates
+b_5 <- create(n, 6, 47, sens_prob)
+m200_5 <- create(n, 2.25, 15, sens_prob)
+m300_5 <- create (n, 2, 24, sens_prob)
+
+rcnc1_b_fixed <- (0.45 / 100) * b * bc
+rc1_200_fixed <- (0.45 / 100) * m200 * m200c
+rc1_300_fixed <- (0.45 / 100) * m300 * m300c
+rc1_fixed <- rcnc1_b_fixed + rc1_200_fixed + rc1_300_fixed
+
+rcnc1_b_damages <- (0.1) * b_5[1:n, 1] * bc
+rc1_200_damages <- (0.1) * m200_5[1:n, 1] * m200c
+rc1_300_damages <- (0.1) * m300_5[1:n, 1] * m300c
+rc1_dam <- rcnc1_b_damages + rc1_200_damages + rc1_300_damages + (0.1 * inc_dam[1:n, 1])
+
+rcnc1_b_rebate <- 0.2 * ((5 * rcnc1_b_fixed) - (sum(b_5) * bc * 0.1))
+rc1_200_rebate <- 0.2 * ((5 * rc1_200_fixed) - (sum(m200_5) * m200c * 0.1))
+rc1_300_rebate <- 0.2 * ((5 * rc1_300_fixed) - (sum(m300_5) * m300c * 0.1))
+rc_reb <- rcnc1_b_rebate + rc1_200_rebate + rc1_300_rebate
+
+rcnc1 <- rc1_fixed + rc1_dam
+rcnc1_5 <- (5 * rc1_fixed) - max(rc_reb, 0) + (rowSums(inc_dam) + (rowSums(b_5) * bc) + (rowSums(m200_5) * m200c) + (rowSums(m300_5) * m300c)) * 0.1 
+
+#RCNC2
+#0.10% fleet + min(90% total losses, 1% insured fleet value)
+
+rcnc2_b_fixed <- (0.1 / 100) * b * bc
+rc2_200_fixed <- (0.1 / 100) * m200 * m200c
+rc2_300_fixed <- (0.1 / 100) * m300 * m300c
+rc2_fixed <- rcnc2_b_fixed + rc2_200_fixed + rc2_300_fixed
+
+#losses
+rc2_dam <- (0.9) * ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + 
+                      (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+
+rc2_dam_5 <- (0.9) * ((rowSums(b_5) * bc) + (rowSums(m200_5)* m200c) + 
+                        (rowSums(m300_5)* m300c) + rowSums(inc_dam))
+  
+#insured fleet value
+rcnc2_b_fleet <- (0.01) * b * bc
+rc2_200_fleet <- (0.01) * m200 * m200c
+rc2_300_fleet <- (0.01) * m300 * m300c
+rc2_fleet <- rcnc2_b_fleet + rc2_200_fleet + rc2_300_fleet
+
+rcnc2 <- rc2_fixed + pmin(rc2_dam, rc2_fleet)
+rcnc2_5 <- (5 * rc2_fixed) + pmin(rc2_dam_5, (5 * rc2_fleet))
+
+#CTC
+#$13mil annually + 10% losses up to 80mil + anything over 80mil
+ctc_fixed <- 13
+
+ctc_damages_1 <- ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+ctc_dam_1 <- ifelse(ctc_damages_1 > 80, ((0.1 * ctc_damages_1) + (ctc_damages_1 - 80)),((0.1) * ctc_damages_1))
+
+ctc_dam <- replicate(n, 0)
+for(col in 1:5) {
+  ctc_damages <- ((b_5[1:n, col] * bc) + (m200_5[1:n, col] * m200c) + 
+                    (m300_5[1:n, col] * m300c) + inc_dam[1:n, col])
+  ctc_dams <- ifelse(ctc_damages > 80, ((0.1 * ctc_damages) + (ctc_damages - 80)), ((0.1) * ctc_damages))
+  ctc_dam <- ctc_dam + ctc_dams
+}
+#ctc_dam
+
+ctc <- ctc_fixed + ctc_dam_1
+
+ctc_5 <- ctc_dam + (5 * ctc_fixed)
+
+#HIC
+#0.165% fleet + losses upto $24 mil + 3.5% cumulative profits rebate @ end of 5yrs.
+hic_b_fixed <- (0.165 / 100) * b * bc
+hic_200_fixed <- (0.165 / 100) * m200 * m200c
+hic_300_fixed <- (0.165 / 100) * m300 * m300c
+hic_fixed <- hic_b_fixed + hic_200_fixed + hic_300_fixed
+
+hic_damages_1 <- ((b_5[1:n, 1] * bc) + (m200_5[1:n, 1] * m200c) + (m300_5[1:n, 1] * m300c) + inc_dam[1:n, 1])
+hic_dam_1 <- ifelse(hic_damages_1 > 24.0, 24.0, hic_damages_1)
+
+hic_dam <- replicate(n, 0)
+for(col_h in 1:5) {
+  hic_damages <- ((b_5[1:n, col_h] * bc) + (m200_5[1:n, col_h] * m200c) + 
+                    (m300_5[1:n, col_h] * m300c) + inc_dam[1:n, col_h])
+  hic_dams <- ifelse(hic_damages > 24, 24, hic_damages)
+  hic_dam <- hic_dam + hic_dams
+}
+
+hic_reb <- 0.035 * ((5 * hic_fixed) - mean(hic_dam))
+
+hic <- hic_fixed + hic_dam_1
+hic_5 <- hic_dam - hic_reb + (5 * hic_fixed)
+
+#to create the table
+
+name <- c('Plan', 'Mean > 37 Million (%)', 'Year 1 (Millions)', 'Standard Deviation', 'Total (Millions)')
+plan <- c('RCNC1', 'RCNC2', 'CTC', 'HIC')
+mean <- c(round(mean(rcnc1 > 37) * 100, 4), round(mean(rcnc2 > 37) * 100, 4), round(mean(ctc > 37) * 100, 4), round(mean(hic > 37) * 100, 4))
+y1 <- c(round(mean(rcnc1), 3), round(mean(rcnc2), 3), round(mean(ctc), 3), round(mean(hic), 3))
+sd <- c(round(sd(rcnc1), 3), round(sd(rcnc2), 3), round(sd(ctc), 3), round(sd(hic), 3))
+total <- c(round(mean(rcnc1_5), 3), round(mean(rcnc2_5), 3), round(mean(ctc_5), 3), round(mean(hic_5), 3))
+
+ind_table <- matrix(c(plan, mean, y1, sd, total), nrow = 4, ncol = 5)
+knitr::kable(ind_table, col.names = name)
+
+min_breaks <- min(c(rcnc1, rcnc2, ctc, hic))
+max_breaks <- max(c(rcnc1, rcnc2, ctc, hic))
+ax <- pretty(min_breaks:max_breaks, n = 10)
+hgA <- hist(rcnc1, breaks = ax, plot = FALSE)
+hgB <- hist(rcnc2, breaks = ax, plot = FALSE)
+hgC <- hist(ctc, breaks = ax, plot = FALSE)
+hgD <- hist(hic, breaks = ax, plot = FALSE)
+
+c1 <- rgb(173,216,230,max = 255, alpha = 80, names = "lt.blue")
+c2 <- rgb(255,192,203, max = 255, alpha = 80, names = "lt.pink")
+c3 <- rgb(144,238,144, max = 255, alpha = 80, names = "lt.green")
+c4 <- rgb(255,255,153, max = 255, alpha = 80, names = "lt.pink")
+
+par(mfrow=c(2,2))
+plot(hgA, col = c1, main='1-Year RCNC 1', xlab='Cost')
+plot(hgB, col = c2, main='1-Year RCNC 2', xlab='Cost', horizontal=TRUE)
+plot(hgC, col = c3, main='1-Year CTC', xlab='Cost')
+plot(hgD, col = c4, main='1-Year HIC', xlab='Cost', horizontal=TRUE)
+
+min_breaks <- min(c(rcnc1_5, rcnc2_5, ctc_5, hic_5))
+max_breaks <- max(c(rcnc1_5, rcnc2_5, ctc_5, hic_5))
+ax <- pretty(min_breaks:max_breaks, n = 10)
+hgA <- hist(rcnc1_5, breaks = ax, plot = FALSE)
+hgB <- hist(rcnc2_5, breaks = ax, plot = FALSE)
+hgC <- hist(ctc_5, breaks = ax, plot = FALSE)
+hgD <- hist(hic_5, breaks = ax, plot = FALSE)
+
+par(mfrow=c(2,2))
+plot(hgA, col = c1, main='5-Year RCNC 1', xlab='Cost')
+plot(hgB, col = c2, main='5-Year RCNC 2', xlab='Cost', horizontal=TRUE)
+plot(hgC, col = c3, main='5-Year CTC', xlab='Cost')
+plot(hgD, col = c4, main='5-Year HIC', xlab='Cost', horizontal=TRUE)
+```
+
+*frequency refers to the number of times a particular cost occurs over the span of 1,000,000 trials*   
+
+Similar to the graphs for the industry-wide accident rate, for the scenario in which Ontario Gateway operates at a 25% safer rate follow the same trend. The possibility of RCNC2 leading to bankruptcy still exists in this case. The cost of RCNC1 falls significantly higher on average than CTC and HIC even after the 1st year. When looking at the cost of insurance over 5 years, CTC still leads to the least risk and most stability. Thus our recommendation would still be to go with CTC. 
